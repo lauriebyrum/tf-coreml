@@ -1306,14 +1306,25 @@ def slice(op, context):
     else:
       tmp_output_name = output_name
       tmp_input_name = input_name
-    if begin[1] != 0:
-      context.builder.add_slice(
-        tmp_output_name, input_name, tmp_output_name,
-          'height', int(begin[1]), int(begin[1]) + int(size[1]), 1)
-    if begin[2] != 0:
-      context.builder.add_slice(
-        output_name, tmp_input_name, output_name,
-          'width', int(begin[2]), int(begin[2]) + int(size[2]), 1)
+    
+    if begin[1] == 0 and begin[2] == 0:
+        if input_shape[1] == size[1] and input_shape[2] == size[2]:
+            #channel slice
+            context.builder.add_slice(
+                output_name, input_name, output_name,
+                'channel', int(begin[3]), int(begin[3]) + int(size[3]), 1)
+        else:
+            raise NotImplementedError('Slice case not handled '
+                                      '(input shape: %s, output shape: %s)'%(str(input_shape), str(output_shape)))
+    else: 
+        if begin[1] != 0:
+          context.builder.add_slice(
+            tmp_output_name, input_name, tmp_output_name,
+              'height', int(begin[1]), int(begin[1]) + int(size[1]), 1)
+        if begin[2] != 0:
+          context.builder.add_slice(
+            output_name, tmp_input_name, output_name,
+              'width', int(begin[2]), int(begin[2]) + int(size[2]), 1)
 
   elif input_name in context.consts:
     #this means all the inputs to the slice layer are constant
