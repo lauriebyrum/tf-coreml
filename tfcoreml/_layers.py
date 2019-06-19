@@ -798,8 +798,7 @@ def mirror_pad(op, context):
       input_name=input_name, output_name=output_name,
       padding_type='reflection')
 
-def pad(op, context):
-
+def pad_shared(op, context, constant_values):
   input_name = compat.as_str_any(op.inputs[0].name)
   output_name = compat.as_str_any(op.outputs[0].name)
   padding_input_name = compat.as_str_any(op.inputs[1].name)
@@ -827,7 +826,7 @@ def pad(op, context):
     context.builder.add_padding(
         output_name, left, right, top, bottom,
         input_name=input_name, output_name=output_name,
-        padding_type='constant')
+        padding_type='constant', value = constant_values)
   elif top + bottom + left + right == 0:
     top = channel_begin
     bottom = channel_end
@@ -844,6 +843,18 @@ def pad(op, context):
     assert False, 'Padding case not supported'
 
   context.translated[output_name] = True
+  
+def pad(op, context):
+  pad_shared(op, context, 0)
+  
+def pad2(op, context):
+  constant_values_input_name = compat.as_str_any(op.inputs[2].name)
+
+  if constant_values_input_name in context.consts:
+    constant_values = context.consts[constant_values_input_name]
+  else:
+    constant_values = context.session.run(constant_values_input_name, feed_dict=context.input_feed_dict)
+  pad_shared(op, context, constant_values)
 
 def squared_difference(op, context):
 
@@ -1243,30 +1254,60 @@ def strided_slice(op, context):
   elif np.array_equal(np.squeeze(x),np.squeeze(y)):
     skip(op,context)
   # check for slice along the height and width axis
-  elif len(input_shape) == 4 and \
-        len(begin) == 4 and len(strides) == 4 and len(end) == 4 and \
-          (begin_mask == 9 or (begin[0] == 0 and begin[-1] == 0)):
+  elif len(input_shape) == 4:
+     if len(begin) == 2:
+         begin = np.insert(begin, 0, 0)
+         begin = np.insert(begin, 0, 0)
+     if len(end) == 2:
+         end = np.insert(end, 0, 0)
+         end = np.insert(end, 0, 0)
+     if len(strides) == 2:
+         strides = np.insert(strides, 0, 1)
+         strides = np.insert(strides, 0, 1)
 
-    if end_mask == 15:
-      end[1] = input_shape[1]
-      end[2] = input_shape[2]
+     if len(begin) == 4 and len(strides) == 4 and len(end) == 4 and \
+          (begin_mask == 9 or begin[0] == 0):
 
-    if begin[1] != 0 and begin[2] != 0:
-      tmp_output_name = output_name + '_height_sliced'
-      tmp_input_name = tmp_output_name
-    else:
-      tmp_output_name = output_name
-      tmp_input_name = input_name
-    if begin[1] != 0:
-      context.builder.add_slice(
-        tmp_output_name, input_name, tmp_output_name,
-          'height', int(begin[1]), int(end[1]), int(strides[1]))
-    if begin[2] != 0:
-      context.builder.add_slice(
-        output_name, tmp_input_name, output_name,
-          'width', int(begin[2]), int(end[2]), int(strides[2]))
+        if end_mask == 15:
+          end[1] = input_shape[1]
+          end[2] = input_shape[2]
+    
+        if begin[1] != 0 and begin[2] != 0:
+          tmp_output_name = output_name + '_height_sliced'
+          tmp_input_name = tmp_output_name
+        else:
+          tmp_output_name = output_name
+          tmp_input_name = input_name
+        if begin[1] == 0 and begin[2] == 0:
+            if end[1] == 0 and end[2] == 0 :
+                context.builder.add_slice(
+                    output_name, input_name, output_name,
+                      'channel', int(begin[3]), int(end[3]), int(strides[3]))
+            elif end[1] == 0:
+                context.builder.add_slice(
+                    output_name, input_name, output_name,
+                      'width', int(begin[2]), int(end[2]), int(strides[2]))
+            else:
+                context.builder.add_slice(
+                    output_name, input_name, output_name,
+                    'height', int(begin[1]), int(end[1]), int(strides[1]))
+    
+        else:
+            if begin[1] != 0:
+              context.builder.add_slice(
+                tmp_output_name, input_name, tmp_output_name,
+                  'height', int(begin[1]), int(end[1]), int(strides[1]))
+            if begin[2] != 0:
+              context.builder.add_slice(
+                output_name, tmp_input_name, output_name,
+                  'width', int(begin[2]), int(end[2]), int(strides[2]))
+     else:
+        raise NotImplementedError('Strided Slice case not handled '
+            '(input shape: %s, output shape: %s)'%(str(input_shape), str(output_shape)))
   else:
-    assert False, ('Strided Slice case not handled. Input shape = {}, output shape = {}'.format(str(input_shape),str(output_shape)))
+    raise NotImplementedError('Strided Slice case not handled '
+            '(input shape: %s, output shape: %s)'%(str(input_shape), str(output_shape)))
+  
   context.translated[output_name] = True
 
 def slice(op, context):

@@ -38,6 +38,7 @@ _CORE_OPS = {
   'Neg': _layers.neg,
   'OneHot': _layers.one_hot,
   'Pad': _layers.pad,
+  'PadV2': _layers.pad2,
   'Placeholder': _layers.placeholder,
   'Pow': _layers.pow,
   'Prod': _layers.product,  # TODO - there're unsupported configurations
